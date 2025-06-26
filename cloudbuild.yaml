@@ -9,12 +9,12 @@ steps:
         apt-get update && apt-get install -y zip
         zip -r app-source.zip . -x "cloudbuild.yaml"
 
-  # Step 2: Upload ZIP to Artifact Registry (Generic)
+  # Step 2: Upload ZIP to Artifact Registry and save version to a file
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'Upload to Artifact Registry'
-    entrypoint: bash
+    entrypoint: 'bash'
     args:
-      - -c
+      - '-c'
       - |
         VERSION=$(date +%Y%m%d%H%M%S)
         echo $VERSION > /workspace/version.txt
@@ -28,9 +28,9 @@ steps:
   # Step 3: Check if VM exists, create if not
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Check and create VM'
-    entrypoint: bash
+    entrypoint: 'bash'
     args:
-      - -c
+      - '-c'
       - |
         if ! gcloud compute instances describe my-vm-instance --zone=asia-east1-b --project=mythic-beanbag-463309-e9 >/dev/null 2>&1; then
           echo "Creating VM..."
@@ -48,17 +48,18 @@ steps:
           echo "VM already exists."
         fi
 
-  # Step 4: Create startup script to download from Artifact Registry and run app
+  # Step 4: Create startup script with embedded version (read from file)
   - name: 'ubuntu'
     id: 'Create startup script'
-    entrypoint: bash
+    entrypoint: 'bash'
     args:
-      - -c
+      - '-c'
       - |
         VERSION=$(cat /workspace/version.txt)
         cat << EOF > /workspace/startup.sh
         #!/bin/bash
         set -e
+
         sudo apt-get update
         sudo apt-get install -y unzip curl python3 python3-pip
 
@@ -83,7 +84,7 @@ steps:
       - --zone=asia-east1-b
       - --project=mythic-beanbag-463309-e9
 
-  # Step 6: SSH into VM and run the startup script
+  # Step 6: Run the startup script on the VM
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Run startup script on VM'
     args:
