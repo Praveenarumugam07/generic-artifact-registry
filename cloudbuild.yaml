@@ -1,56 +1,55 @@
 steps:
-  # Step 1: Zip the app (excluding this YAML)
+  # Step 1: Zip the source code (excluding cloudbuild.yaml)
   - name: 'ubuntu'
-    id: 'Zip app'
+    id: 'Zip source'
     entrypoint: bash
     args:
       - -c
       - |
         apt-get update && apt-get install -y zip
-        zip -r app.zip . -x "cloudbuild.yaml"
+        zip -r app.zip . -x cloudbuild.yaml
 
-  # Step 2: Upload the ZIP to Artifact Registry (generic)
+  # Step 2: Upload to Artifact Registry (generic)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'Upload to Artifact Registry'
+    id: 'Upload ZIP to Artifact Registry'
     entrypoint: bash
     args:
       - -c
       - |
-        VERSION=$(date +%Y%m%d%H%M%S)
-        echo "$VERSION" > /workspace/version.txt
+        VER=$(date +%Y%m%d%H%M%S)
+        echo $VER > /workspace/version.txt
         gcloud artifacts files upload app.zip \
-          --project=mythic-beanbag-463309-e9 \
+          --project=onyx-antler-459216-j6 \
           --location=asia-south1 \
           --repository=generic-repo \
           --package=vm-flask-app \
-          --version=$VERSION
+          --version=$VER
 
-  # Step 3: Create the VM (if it doesn't exist)
+  # Step 3: Create VM if not exists
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create VM if needed'
     entrypoint: bash
     args:
       - -c
       - |
-        gcloud compute instances describe app-vm --zone=asia-south1-a --project=mythic-beanbag-463309-e9 >/dev/null 2>&1 || \
-        gcloud compute instances create app-vm \
-          --zone=asia-south1-a \
-          --machine-type=e2-micro \
-          --image-family=debian-11 \
-          --image-project=debian-cloud \
-          --boot-disk-size=20GB \
-          --tags=http-server \
-          --scopes=https://www.googleapis.com/auth/cloud-platform \
-          --service-account=956387703564-compute@developer.gserviceaccount.com@mythic-beanbag-463309-e9.iam.gserviceaccount.com
+        gcloud compute instances describe app-vm --zone=asia-south1-a --project=onyx-antler-459216-j6 \
+        || gcloud compute instances create app-vm \
+             --zone=asia-south1-a \
+             --machine-type=e2-micro \
+             --image-family=debian-11 \
+             --image-project=debian-cloud \
+             --tags=http-server \
+             --scopes=https://www.googleapis.com/auth/cloud-platform \
+             --boot-disk-size=20GB \
+             --project=onyx-antler-459216-j6
 
-  # Step 4: Create the startup script
+  # Step 4: Create startup.sh script
   - name: 'ubuntu'
-    id: 'Create startup.sh'
+    id: 'Create startup script'
     entrypoint: bash
     args:
       - -c
       - |
-        VERSION=$(cat /workspace/version.txt)
         cat << 'EOF' > /workspace/startup.sh
         #!/bin/bash
         set -e
@@ -58,20 +57,21 @@ steps:
         sudo apt-get update
         sudo apt-get install -y unzip curl python3 python3-pip
 
-        VERSION=$(cat /home/USER/version.txt)
-
-        curl -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+        VER=$(cat /home/praveen_a/version.txt)
+        AUTH=$(gcloud auth print-access-token)
+        curl -H "Authorization: Bearer $AUTH" \
           -o app.zip \
-          "https://asia-south1-artifactregistry.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/asia-south1/repositories/generic-repo/packages/vm-flask-app/versions/\${VERSION}/files/app.zip?alt=media"
+          "https://asia-south1-artifactregistry.googleapis.com/v1/projects/onyx-antler-459216-j6/locations/asia-south1/repositories/generic-repo/packages/vm-flask-app/versions/$VER/files/app.zip?alt=media"
 
         unzip -o app.zip -d app-dir
         cd app-dir
         pip3 install -r requirements.txt
         nohup python3 main.py > app.log 2>&1 &
         EOF
-  # Step 5: Copy script and version.txt to VM
+
+  # Step 5: Copy startup.sh and version.txt to VM
   - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'Copy to VM'
+    id: 'Copy files to VM'
     args:
       - compute
       - scp
@@ -79,17 +79,17 @@ steps:
       - /workspace/version.txt
       - praveen_a@app-vm:/home/praveen_a
       - --zone=asia-south1-a
-      - --project=mythic-beanbag-463309-e9
+      - --project=onyx-antler-459216-j6
 
-  # Step 6: SSH to run the script
+  # Step 6: Run startup.sh on VM
   - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'Run on VM'
+    id: 'Run app on VM'
     args:
       - compute
       - ssh
       - praveen_a@app-vm
       - --zone=asia-south1-a
-      - --project=mythic-beanbag-463309-e9
+      - --project=onyx-antler-459216-j6
       - --command=bash /home/praveen_a/startup.sh
 
 options:
