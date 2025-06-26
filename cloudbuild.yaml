@@ -19,7 +19,7 @@ steps:
         VERSION=$(date +%Y%m%d%H%M%S)
         echo "$VERSION" > /workspace/version.txt
         gcloud artifacts files upload app.zip \
-          --project=YOUR_PROJECT_ID \
+          --project=mythic-beanbag-463309-e9 \
           --location=asia-south1 \
           --repository=generic-repo \
           --package=vm-flask-app \
@@ -32,7 +32,7 @@ steps:
     args:
       - -c
       - |
-        gcloud compute instances describe app-vm --zone=asia-south1-a --project=YOUR_PROJECT_ID >/dev/null 2>&1 || \
+        gcloud compute instances describe app-vm --zone=asia-south1-a --project=mythic-beanbag-463309-e9 >/dev/null 2>&1 || \
         gcloud compute instances create app-vm \
           --zone=asia-south1-a \
           --machine-type=e2-micro \
@@ -41,7 +41,7 @@ steps:
           --boot-disk-size=20GB \
           --tags=http-server \
           --scopes=https://www.googleapis.com/auth/cloud-platform \
-          --service-account=YOUR_SA@YOUR_PROJECT_ID.iam.gserviceaccount.com
+          --service-account=956387703564-compute@developer.gserviceaccount.com@mythic-beanbag-463309-e9.iam.gserviceaccount.com
 
   # Step 4: Create the startup script dynamically
   - name: 'ubuntu'
@@ -57,10 +57,10 @@ steps:
         sudo apt-get update
         sudo apt-get install -y unzip curl python3 python3-pip
 
-        VERSION=$(cat /home/USER/version.txt)
+        VERSION=$(cat /home/praveen_a/version.txt)
         curl -H "Authorization: Bearer $(gcloud auth print-access-token)" \
           -o app.zip \
-          "https://asia-south1-artifactregistry.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/asia-south1/repositories/generic-repo/packages/vm-flask-app/versions/${VERSION}/files/app.zip?alt=media"
+          "https://asia-south1-artifactregistry.googleapis.com/v1/projects/mythic-beanbag-463309-e9/locations/asia-south1/repositories/generic-repo/packages/vm-flask-app/versions/${VERSION}/files/app.zip?alt=media"
 
         unzip -o app.zip -d app-dir
         cd app-dir
@@ -76,9 +76,9 @@ steps:
       - scp
       - /workspace/startup.sh
       - /workspace/version.txt
-      - USER@app-vm:/home/USER
+      - praveen_a@app-vm:/home/praveen_a
       - --zone=asia-south1-a
-      - --project=YOUR_PROJECT_ID
+      - --project=mythic-beanbag-463309-e9
 
   # Step 6: SSH to run the script
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -86,10 +86,10 @@ steps:
     args:
       - compute
       - ssh
-      - USER@app-vm
+      - praveen_a@app-vm
       - --zone=asia-south1-a
-      - --project=YOUR_PROJECT_ID
-      - --command=bash /home/USER/startup.sh
+      - --project=mythic-beanbag-463309-e9
+      - --command=bash /home/praveen_a/startup.sh
 
 options:
   logging: CLOUD_LOGGING_ONLY
