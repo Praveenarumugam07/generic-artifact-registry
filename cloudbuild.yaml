@@ -1,0 +1,37 @@
+# cloudbuild.yaml
+steps:
+  # Step 1: Zip the source code
+  - name: 'gcr.io/cloud-builders/zip'
+    args: ['-r', 'app.zip', '.']
+
+  # Step 2: Upload the zipped file to Artifact Registry
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        VERSION=$(date +%Y%m%d%H%M%S)
+        gcloud artifacts files upload app.zip \
+          --project=$PROJECT_ID \
+          --location=asia-south1 \
+          --repository=generic-repo \
+          --package=my-python-app \
+          --version=$VERSION
+
+  # Step 3: SSH into the VM and deploy the app
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        VM_NAME="app-vm"
+        VM_ZONE="asia-south1-a"
+        VERSION=$(date +%Y%m%d%H%M%S)
+        FILE_URL="https://asia-south1-artifactregistry.googleapis.com/v1/projects/$PROJECT_ID/locations/asia-south1/repositories/generic-repo/packages/my-python-app/versions/$VERSION/files/app.zip?alt=media"
+
+        gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command="\
+          curl -o app.zip '$FILE_URL' && \
+          unzip -o app.zip && \
+          pip3 install -r requirements.txt && \
+          nohup python3 main.py &"
+timeout: 900s
