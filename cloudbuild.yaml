@@ -1,37 +1,106 @@
-# cloudbuild.yaml
 steps:
-  # Step 1: Zip the source code
-  - name: 'gcr.io/cloud-builders/zip'
-    args: ['-r', 'app.zip', '.']
+  # Step 1: Zip the source folder, excluding cloudbuild.yaml
+  - name: 'ubuntu'
+    id: 'Zip source folder'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        apt-get update && apt-get install -y zip
+        zip -r app-source.zip . -x "cloudbuild.yaml"
 
-  # Step 2: Upload the zipped file to Artifact Registry
+  # Step 2: Upload ZIP to Artifact Registry (Generic)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'Upload to Artifact Registry'
     entrypoint: bash
     args:
       - -c
       - |
         VERSION=$(date +%Y%m%d%H%M%S)
-        gcloud artifacts files upload app.zip \
-          --project=$PROJECT_ID \
-          --location=asia-south1 \
+        export VERSION
+        gcloud artifacts files upload app-source.zip \
+          --project=mythic-beanbag-463309-e9 \
+          --location=asia-east1 \
           --repository=generic-repo \
-          --package=my-python-app \
+          --package=python-vm-app \
           --version=$VERSION
+        echo "VERSION=$VERSION" >> /workspace/version.txt
 
-  # Step 3: SSH into the VM and deploy the app
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  # Step 3: Check if VM exists, create if not
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Check and create VM'
     entrypoint: bash
     args:
       - -c
       - |
-        VM_NAME="app-vm"
-        VM_ZONE="asia-south1-a"
-        VERSION=$(date +%Y%m%d%H%M%S)
-        FILE_URL="https://asia-south1-artifactregistry.googleapis.com/v1/projects/$PROJECT_ID/locations/asia-south1/repositories/generic-repo/packages/my-python-app/versions/$VERSION/files/app.zip?alt=media"
+        if ! gcloud compute instances describe my-vm-instance --zone=asia-east1-b --project=mythic-beanbag-463309-e9 >/dev/null 2>&1; then
+          echo "Creating VM..."
+          gcloud compute instances create my-vm-instance \
+            --zone=asia-east1-b \
+            --machine-type=e2-micro \
+            --image-family=debian-11 \
+            --image-project=debian-cloud \
+            --boot-disk-size=20GB \
+            --tags=http-server \
+            --scopes=https://www.googleapis.com/auth/cloud-platform \
+            --service-account=956387703564-compute@developer.gserviceaccount.com \
+            --project=mythic-beanbag-463309-e9
+        else
+          echo "VM already exists."
+        fi
 
-        gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command="\
-          curl -o app.zip '$FILE_URL' && \
-          unzip -o app.zip && \
-          pip3 install -r requirements.txt && \
-          nohup python3 main.py &"
-timeout: 900s
+  # Step 4: Create startup script to download from Artifact Registry and run the app
+  - name: 'ubuntu'
+    id: 'Create startup script'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        VERSION=$(cat /workspace/version.txt | cut -d "=" -f2)
+        cat << EOF > startup.sh
+        #!/bin/bash
+        set -e
+
+        # Install required packages
+        sudo apt-get update
+        sudo apt-get install -y unzip curl python3 python3-pip
+
+        # Download from Artifact Registry (Generic)
+        curl -H "Authorization: Bearer \$(gcloud auth print-access-token)" \
+          -o app-source.zip \
+          "https://asia-east1-artifactregistry.googleapis.com/v1/projects/mythic-beanbag-463309-e9/locations/asia-east1/repositories/generic-repo/packages/python-vm-app/versions/$VERSION/files/app-source.zip?alt=media"
+
+        # Unzip and install
+        unzip -o app-source.zip -d app-dir
+        cd app-dir
+        pip3 install -r requirements.txt
+
+        # Run the app
+        nohup python3 main.py > app.log 2>&1 &
+        EOF
+
+  # Step 5: Copy startup script to VM
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Copy startup script to VM'
+    args:
+      - compute
+      - scp
+      - startup.sh
+      - sajja_vamsi@my-vm-instance:/home/sajja_vamsi
+      - --zone=asia-east1-b
+      - --project=mythic-beanbag-463309-e9
+
+  # Step 6: SSH into VM and run the startup script
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Run startup script on VM'
+    args:
+      - compute
+      - ssh
+      - sajja_vamsi@my-vm-instance
+      - --zone=asia-east1-b
+      - --project=mythic-beanbag-463309-e9
+      - --command=bash /home/sajja_vamsi/startup.sh
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: ALLOW_LOOSE
