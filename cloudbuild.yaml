@@ -1,5 +1,5 @@
 steps:
-  # Step 1: Zip the source code (excluding cloudbuild.yaml)
+  # Step 1: Zip the source code
   - name: 'ubuntu'
     id: 'Zip source'
     entrypoint: bash
@@ -9,9 +9,9 @@ steps:
         apt-get update && apt-get install -y zip
         zip -r app.zip . -x cloudbuild.yaml
 
-  # Step 2: Upload to Artifact Registry (generic)
+  # Step 2: Upload ZIP to Artifact Registry (generic)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'Upload ZIP to Artifact Registry'
+    id: 'Upload to Artifact Registry'
     entrypoint: bash
     args:
       - -c
@@ -43,37 +43,36 @@ steps:
              --boot-disk-size=20GB \
              --project=onyx-antler-459216-j6
 
-# Step 4: Create startup.sh script safely
-- name: 'ubuntu'
-  id: 'Create startup script'
-  entrypoint: bash
-  args:
-    - -c
-    - |
-      cat << 'EOF' > /workspace/startup.sh
-      #!/bin/bash
-      set -e
+  # Step 4: Create startup.sh script
+  - name: 'ubuntu'
+    id: 'Create startup script'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        cat << 'EOF' > /workspace/startup.sh
+#!/bin/bash
+set -e
 
-      sudo apt-get update
-      sudo apt-get install -y unzip curl python3 python3-pip
+sudo apt-get update
+sudo apt-get install -y unzip curl python3 python3-pip
 
-      VERSION=$(cat /home/praveen_a/version.txt)
-      TOKEN=$(gcloud auth print-access-token)
+VERSION=$(cat /home/praveen_a/version.txt)
+TOKEN=$(gcloud auth print-access-token)
 
-      curl -H "Authorization: Bearer $TOKEN" \
-        -o app.zip \
-        "https://asia-south1-artifactregistry.googleapis.com/v1/projects/onyx-antler-459216-j6/locations/asia-south1/repositories/generic-repo/packages/vm-flask-app/versions/${VERSION}/files/app.zip?alt=media"
+curl -H "Authorization: Bearer $TOKEN" \
+  -o app.zip \
+  "https://asia-south1-artifactregistry.googleapis.com/v1/projects/onyx-antler-459216-j6/locations/asia-south1/repositories/generic-repo/packages/vm-flask-app/versions/${VERSION}/files/app.zip?alt=media"
 
-      unzip -o app.zip -d app-dir
-      cd app-dir
-      pip3 install -r requirements.txt
-      nohup python3 main.py > app.log 2>&1 &
-      EOF
+unzip -o app.zip -d app-dir
+cd app-dir
+pip3 install -r requirements.txt
+nohup python3 main.py > app.log 2>&1 &
+EOF
 
-
-  # Step 5: Copy startup.sh and version.txt to VM
+  # Step 5: Copy files to VM
   - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'Copy files to VM'
+    id: 'Copy to VM'
     args:
       - compute
       - scp
@@ -83,9 +82,9 @@ steps:
       - --zone=asia-south1-a
       - --project=onyx-antler-459216-j6
 
-  # Step 6: Run startup.sh on VM
+  # Step 6: SSH and run the script
   - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'Run app on VM'
+    id: 'Run startup on VM'
     args:
       - compute
       - ssh
