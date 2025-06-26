@@ -17,14 +17,13 @@ steps:
       - -c
       - |
         VERSION=$(date +%Y%m%d%H%M%S)
-        export VERSION
+        echo $VERSION > /workspace/version.txt
         gcloud artifacts files upload app-source.zip \
           --project=mythic-beanbag-463309-e9 \
           --location=asia-east1 \
           --repository=generic-repo \
           --package=python-vm-app \
           --version=$VERSION
-        echo "VERSION=$VERSION" >> /workspace/version.txt
 
   # Step 3: Check if VM exists, create if not
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -49,33 +48,27 @@ steps:
           echo "VM already exists."
         fi
 
-  # Step 4: Create startup script to download from Artifact Registry and run the app
+  # Step 4: Create startup script to download from Artifact Registry and run app
   - name: 'ubuntu'
     id: 'Create startup script'
-    entrypoint: 'bash'
+    entrypoint: bash
     args:
-      - '-c'
+      - -c
       - |
-        VERSION=$(cat /workspace/version.txt | cut -d "=" -f2)
-        cat << EOF > startup.sh
+        VERSION=$(cat /workspace/version.txt)
+        cat << EOF > /workspace/startup.sh
         #!/bin/bash
         set -e
-
-        # Install required packages
         sudo apt-get update
         sudo apt-get install -y unzip curl python3 python3-pip
 
-        # Download from Artifact Registry (Generic)
         curl -H "Authorization: Bearer \$(gcloud auth print-access-token)" \
           -o app-source.zip \
           "https://asia-east1-artifactregistry.googleapis.com/v1/projects/mythic-beanbag-463309-e9/locations/asia-east1/repositories/generic-repo/packages/python-vm-app/versions/$VERSION/files/app-source.zip?alt=media"
 
-        # Unzip and install
         unzip -o app-source.zip -d app-dir
         cd app-dir
         pip3 install -r requirements.txt
-
-        # Run the app
         nohup python3 main.py > app.log 2>&1 &
         EOF
 
@@ -85,7 +78,7 @@ steps:
     args:
       - compute
       - scp
-      - startup.sh
+      - /workspace/startup.sh
       - sajja_vamsi@my-vm-instance:/home/sajja_vamsi
       - --zone=asia-east1-b
       - --project=mythic-beanbag-463309-e9
@@ -103,4 +96,3 @@ steps:
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  substitution_option: ALLOW_LOOSE
